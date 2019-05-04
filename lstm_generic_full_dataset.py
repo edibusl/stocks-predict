@@ -126,29 +126,31 @@ def create_lstm_dataset(dataset, look_back=1):
     return data_x, np.array(data_y)
 
 
-def plot_prediction_results(data):
+def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True):
     # Plot the loss in every epoch during training
-    plt.figure(figsize=(15,10))
-    plt.plot(data["model_loss"])
-    plt.plot(data["cv_loss"])
-    plt.title("Loss during training")
-    plt.ylabel("Loss")
-    plt.xlabel("Epoch")
-    plt.legend(["Train", "Cross validation"])
-    plt.show()
+    if plot_loss:
+        plt.figure(figsize=(15,10))
+        plt.plot(data["model_loss"])
+        plt.plot(data["cv_loss"])
+        plt.title("Loss during training")
+        plt.ylabel("Loss")
+        plt.xlabel("Epoch")
+        plt.legend(["Train", "Cross validation"])
+        plt.show()
 
     # Plot the actual values vs predicted values in the testing set
-    plt.figure(figsize=(15, 10))
-    plt.plot(data["test_y"])
-    plt.plot(data["test_y_predicted"])
-    plt.title("Testing set - Predicted vs Actual")
-    plt.xlabel("Day")
-    plt.ylabel("Close Price")
-    plt.legend(["Real", "Prediction"])
-    plt.show()
+    if plot_predicted_vs_actual:
+        plt.figure(figsize=(15, 10))
+        plt.plot(data["test_y"])
+        plt.plot(data["test_y_predicted"])
+        plt.title("Testing set - Predicted vs Actual")
+        plt.xlabel("Day")
+        plt.ylabel("Close Price")
+        plt.legend(["Real", "Prediction"])
+        plt.show()
 
 
-def run_single_configuration(batch_size=5, look_back=3, epochs=60, plot_results=True):
+def run_single_configuration(batch_size=5, look_back=3, epochs=60, plot_results=True, verbose=2):
     # If we don't have a fixed seed, every time that I train the model, it predicts different results.
     # Probably we should make enough epochs in order to get to a very small loss in order to get deterministic results
     np.random.seed(7)
@@ -158,7 +160,7 @@ def run_single_configuration(batch_size=5, look_back=3, epochs=60, plot_results=
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
 
     # Run prediction
-    res = predict_close_lstm(df, batch_size=batch_size, look_back=look_back, epochs=epochs)
+    res = predict_close_lstm(df, batch_size=batch_size, look_back=look_back, epochs=epochs, verbose=verbose)
     print("Test RMSE: %.2f" % (res["test_rmse"]))
 
     # Plot results
