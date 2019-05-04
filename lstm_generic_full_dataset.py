@@ -17,8 +17,9 @@ def predict_close_lstm(df, batch_size=1, look_back=4, epochs=100, verbose=2):
     df_train, df_test = train_test_split(df, train_size=0.8, test_size=0.2, shuffle=False)
 
     # Take only the training columns
-    df_train = df_train.loc[:, ["Close"]]
-    df_test = df_test.loc[:, ["Close"]]
+    feature_columns = ["Close", "Open", "High", "Low", "Volume"]
+    df_train = df_train.loc[:, feature_columns]
+    df_test = df_test.loc[:, feature_columns]
 
     # Normalize the dataset
     scaler = MinMaxScaler(feature_range=(0, 1))
@@ -47,7 +48,7 @@ def predict_close_lstm(df, batch_size=1, look_back=4, epochs=100, verbose=2):
     logger.debug("Training size: %s. Cross validation size: %s. Testing size: %s.", train_x.shape[0], cv_x.shape[0], test_x.shape[0])
 
     # Train the model using the training set
-    model = create_model(batch_size, look_back=look_back)
+    model = create_model(batch_size, look_back=look_back, features_num=train_x.shape[2])
     model_res = model.fit(train_x, train_y, epochs=epochs, batch_size=batch_size, verbose=verbose, shuffle=False, validation_data=(cv_x, cv_y))
 
     # Predict the testing set
@@ -85,12 +86,12 @@ def fit_to_batch_size(dataset, batch_size):
     return dataset
 
 
-def create_model(batch_size, look_back, regularization_factor=0, dropout=False, custom_optimizer=False):
+def create_model(batch_size, look_back, regularization_factor=0, dropout=False, custom_optimizer=False, features_num=1):
     model = Sequential()
-    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True, return_sequences=True))
+    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, features_num), stateful=True, return_sequences=True))
     if dropout:
         model.add(Dropout(0.5))
-    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, 1), stateful=True))
+    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, features_num), stateful=True))
     if dropout:
         model.add(Dropout(0.5))
     model.add(Dense(1, kernel_regularizer=regularizers.l2(regularization_factor)))
@@ -106,22 +107,22 @@ def create_model(batch_size, look_back, regularization_factor=0, dropout=False, 
     return model
 
 
-def create_lstm_dataset(dataset, look_back=1):
+def create_lstm_dataset(dataset, look_back=1, y_column_index=0):
     data_x, data_y = [], []
 
     # Go through all samples, shift by 1 on every iteration
     # Look upfront to next look_back samples
     for i in range(len(dataset) - look_back - 1):
         # Get next look_back samples
-        look_back_window = dataset[i:(i + look_back), 0]
+        look_back_window = dataset[i:(i + look_back), 0:dataset.shape[1]]
         data_x.append(look_back_window)
 
         # Get the look_back+1 sample for the "y"
-        data_y.append(dataset[i + look_back, 0])
+        data_y.append(dataset[i + look_back, y_column_index])
 
     # Reshape input to be [samples, time steps, features]
     data_x = np.array(data_x)
-    data_x = np.reshape(data_x, (data_x.shape[0], data_x.shape[1], 1))
+    data_x = np.reshape(data_x, (data_x.shape[0], data_x.shape[1], data_x.shape[2]))
 
     return data_x, np.array(data_y)
 
@@ -209,4 +210,4 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # res = run_multiple_configurations()
-    res = run_single_configuration(batch_size=4, look_back=10, epochs=60, plot_results=True)
+    res = run_single_configuration(batch_size=4, look_back=10, epochs=90, plot_results=True)
