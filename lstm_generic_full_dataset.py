@@ -35,9 +35,20 @@ def predict_close_lstm(df, batch_size=1, look_back=4, epochs=100, verbose=2):
     test_x = fit_to_batch_size(test_x, batch_size)
     test_y = fit_to_batch_size(test_y, batch_size)
 
+    # Split testing set to testing set and cross validation set (50%-50%)
+    test_x, cv_x = np.split(test_x, 2)
+    test_y, cv_y = np.split(test_y, 2)
+
+    # Fit again after splitting
+    test_x = fit_to_batch_size(test_x, batch_size)
+    cv_x = fit_to_batch_size(cv_x, batch_size)
+    test_y = fit_to_batch_size(test_y, batch_size)
+    cv_y = fit_to_batch_size(cv_y, batch_size)
+    logger.debug("Training size: %s. Cross validation size: %s. Testing size: %s.", train_x.shape[0], cv_x.shape[0], test_x.shape[0])
+
     # Train the model using the training set
     model = create_model(batch_size, look_back=look_back)
-    model_res = model.fit(train_x, train_y, epochs=epochs, batch_size=batch_size, verbose=verbose, shuffle=False)
+    model_res = model.fit(train_x, train_y, epochs=epochs, batch_size=batch_size, verbose=verbose, shuffle=False, validation_data=(cv_x, cv_y))
 
     # Predict the testing set
     test_y_predicted = model.predict(test_x, batch_size=batch_size)
@@ -58,11 +69,11 @@ def predict_close_lstm(df, batch_size=1, look_back=4, epochs=100, verbose=2):
 
     return {
         "model_loss": model_res.history['loss'],
+        "cv_loss": model_res.history['val_loss'],
         "test_y": test_y,
         "test_y_predicted": test_y_predicted,
         "test_rmse": test_rmse
     }
-
 
 
 def fit_to_batch_size(dataset, batch_size):
@@ -119,14 +130,15 @@ def plot_prediction_results(data):
     # Plot the loss in every epoch during training
     plt.figure(figsize=(15,10))
     plt.plot(data["model_loss"])
+    plt.plot(data["cv_loss"])
     plt.title("Loss during training")
     plt.ylabel("Loss")
     plt.xlabel("Epoch")
-    plt.legend(["Train"])
+    plt.legend(["Train", "Cross validation"])
     plt.show()
 
     # Plot the actual values vs predicted values in the testing set
-    plt.figure(figsize=(15,10))
+    plt.figure(figsize=(15, 10))
     plt.plot(data["test_y"])
     plt.plot(data["test_y_predicted"])
     plt.title("Testing set - Predicted vs Actual")
@@ -195,4 +207,4 @@ if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
     # res = run_multiple_configurations()
-    res = run_single_configuration(batch_size=5, look_back=3, epochs=60, plot_results=True)
+    res = run_single_configuration(batch_size=4, look_back=10, epochs=60, plot_results=True)
