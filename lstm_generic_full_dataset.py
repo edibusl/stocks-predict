@@ -11,14 +11,22 @@ from keras.layers import Dense, LSTM, Dropout
 from keras import regularizers, optimizers
 from sklearn.model_selection import train_test_split
 
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def predict_close_lstm(df, batch_size=1, look_back=4, epochs=100, verbose=2, use_all_features=False):
+
+def predict_close_lstm(df, configs):
+    # Unpack configs
+    look_back = configs["model"]["look_back"]
+    batch_size = configs["model"]["batch_size"]
+
     # Split to 2 dataframes: train and test
-    df_train, df_test = train_test_split(df, train_size=0.6, test_size=0.4, shuffle=False)
+    df_train, df_test = train_test_split(df, train_size=configs["general"]["train_size"], test_size=(1 - configs["general"]["train_size"]),
+                                         shuffle=False)
 
     # Take only the training columns
     feature_columns = ["Close"]
-    if use_all_features:
+    if configs["general"]["use_all_features"]:
         feature_columns += ["Open", "High", "Low", "Volume"]
     df_train = df_train.loc[:, feature_columns]
     df_test = df_test.loc[:, feature_columns]
@@ -50,8 +58,9 @@ def predict_close_lstm(df, batch_size=1, look_back=4, epochs=100, verbose=2, use
     logger.debug("Training size: %s. Cross validation size: %s. Testing size: %s.", train_x.shape[0], cv_x.shape[0], test_x.shape[0])
 
     # Train the model using the training set
-    model = create_model(batch_size, look_back=look_back, features_num=train_x.shape[2])
-    model_res = model.fit(train_x, train_y, epochs=epochs, batch_size=batch_size, verbose=verbose, shuffle=False, validation_data=(cv_x, cv_y))
+    model = create_model(configs, features_num=train_x.shape[2])
+    model_res = model.fit(train_x, train_y, epochs=configs["model"]["epochs"], batch_size=batch_size, verbose=configs["general"]["verbose"],
+                          shuffle=False, validation_data=(cv_x, cv_y))
 
     # Predict the testing set
     test_y_predicted = model.predict(test_x, batch_size=batch_size)
@@ -88,17 +97,34 @@ def fit_to_batch_size(dataset, batch_size):
     return dataset
 
 
-def create_model(batch_size, look_back, regularization_factor=0.3, dropout=False, custom_optimizer=False, features_num=1):
+def create_model(configs, features_num=1):
+    # Unpack configs
+    batch_size = configs["model"]["batch_size"]
+    look_back = configs["model"]["look_back"]
+    dropout_val = configs["model"]["network"]["dropout_val"]
+    regularization_factor = configs["model"]["network"]["regularization_factor"]
+    lstm_neurons = configs["model"]["network"]["lstm_neurons"]
+
     model = Sequential()
-    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, features_num), stateful=True, return_sequences=True, kernel_regularizer=regularizers.l2(regularization_factor)))
-    if dropout:
-        model.add(Dropout(0.4))
-    model.add(LSTM(4, batch_input_shape=(batch_size, look_back, features_num), stateful=True, kernel_regularizer=regularizers.l2(regularization_factor)))
-    if dropout:
-        model.add(Dropout(0.4))
+
+    # Add LSTM layers
+    for i, lstm_neurons_layer in enumerate(lstm_neurons):
+        # We need to return sequences only for all layers except the last one
+        return_sequences = (i < len(lstm_neurons) - 1)
+
+        # Add the layer
+        model.add(LSTM(lstm_neurons_layer, batch_input_shape=(batch_size, look_back, features_num), stateful=True, return_sequences=return_sequences,
+                       kernel_regularizer=regularizers.l2(regularization_factor)))
+
+        # Add dropout for the later
+        if dropout_val > 0:
+            model.add(Dropout(dropout_val))
+
+    # Add output layer
     model.add(Dense(1, kernel_regularizer=regularizers.l2(regularization_factor)))
 
-    if custom_optimizer:
+    # Optional optimizer to control the learning rate
+    if configs["model"]["network"]["custom_optimizer"]:
         learning_rate = 0.005
         optimzer = optimizers.RMSprop(lr=learning_rate)
     else:
@@ -129,10 +155,10 @@ def create_lstm_dataset(dataset, look_back=1, y_column_index=0):
     return data_x, np.array(data_y)
 
 
-def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True):
+def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True, plot_loss_last=False):
     # Plot the loss in every epoch during training
     if plot_loss:
-        plt.figure(figsize=(15,10))
+        plt.figure(figsize=(10, 5))
         plt.plot(data["model_loss"])
         plt.plot(data["cv_loss"])
         plt.title("Loss during training")
@@ -141,9 +167,19 @@ def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True)
         plt.legend(["Train", "Cross validation"])
         plt.show()
 
+    if plot_loss_last:
+        plt.figure(figsize=(10, 5))
+        plt.plot(data["model_loss"][30:])
+        plt.plot(data["cv_loss"][30:])
+        plt.title("Loss during training (last 30 epochs)")
+        plt.ylabel("Loss")
+        plt.xlabel("Epoch")
+        plt.legend(["Train", "Cross validation"])
+        plt.show()
+
     # Plot the actual values vs predicted values in the testing set
     if plot_predicted_vs_actual:
-        plt.figure(figsize=(15, 10))
+        plt.figure(figsize=(10, 5))
         plt.plot(data["test_y"])
         plt.plot(data["test_y_predicted"])
         plt.title("Testing set - Predicted vs Actual")
@@ -153,7 +189,7 @@ def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True)
         plt.show()
 
 
-def run_single_configuration(batch_size=5, look_back=3, epochs=60, plot_results=True, verbose=2, use_all_features=False):
+def run_single_configuration(configs):
     # If we don't have a fixed seed, every time that I train the model, it predicts different results.
     # Probably we should make enough epochs in order to get to a very small loss in order to get deterministic results
     np.random.seed(7)
@@ -163,17 +199,17 @@ def run_single_configuration(batch_size=5, look_back=3, epochs=60, plot_results=
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
 
     # Run prediction
-    res = predict_close_lstm(df, batch_size=batch_size, look_back=look_back, epochs=epochs, verbose=verbose, use_all_features=use_all_features)
+    res = predict_close_lstm(df, configs)
     print("Test RMSE: %.2f" % (res["test_rmse"]))
 
     # Plot results
-    if plot_results:
+    if configs["general"]["plot_results"]:
         plot_prediction_results(res)
 
     return res
 
 
-def run_multiple_configurations():
+def run_multiple_configurations(configs):
     # If we don't have a fixed seed, every time that I train the model, it predicts different results.
     # Probably we should make enough epochs in order to get to a very small loss in order to get deterministic results
     np.random.seed(7)
@@ -195,7 +231,10 @@ def run_multiple_configurations():
             logger.info("Training batch_size {}, look_back {}".format(batch_size, look_back))
 
             # Run prediction
-            res = predict_close_lstm(df, batch_size=batch_size, look_back=look_back, epochs=60, verbose=0)
+            configs["batch_size"] = batch_size
+            configs["look_back"] = look_back
+            res = predict_close_lstm(df, configs)
+
             rmse_look_back.append(res["test_rmse"])
         df_rmse.loc["batch_size {}".format(batch_size)] = rmse_look_back
 
@@ -208,8 +247,25 @@ def run_multiple_configurations():
 
 
 if __name__ == '__main__':
-    logger = logging.getLogger(__name__)
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+    configs = {
+        "general": {
+            "plot_results": False,
+            "verbose": 0,
+            "use_all_features": False,
+            "train_size": 0.8
+        },
+        "model": {
+            "batch_size": 4,
+            "look_back": 10,
+            "epochs": 60,
+            "network": {
+                "custom_optimizer": False,
+                "regularization_factor": 0,
+                "dropout_val": 0,
+                "lstm_neurons": [4, 4]
+            }
+        }
+    }
 
-    # res = run_multiple_configurations()
-    res = run_single_configuration(batch_size=4, look_back=10, epochs=90, plot_results=True)
+    # res = run_multiple_configurations(configs)
+    res = run_single_configuration(configs)
