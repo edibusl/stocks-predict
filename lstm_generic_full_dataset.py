@@ -16,6 +16,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 
 def predict_close_lstm(df, configs):
+    # If we don't have a fixed seed, every time that I train the model, it predicts different results.
+    # Probably we should make enough epochs in order to get to a very small loss in order to get deterministic results
+    np.random.seed(7)
+
     # Unpack configs
     look_back = configs["model"]["look_back"]
     batch_size = configs["model"]["batch_size"]
@@ -171,7 +175,7 @@ def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True,
         plt.figure(figsize=(10, 5))
         plt.plot(data["model_loss"][30:])
         plt.plot(data["cv_loss"][30:])
-        plt.title("Loss during training (last 30 epochs)")
+        plt.title("Loss during training (last epochs)")
         plt.ylabel("Loss")
         plt.xlabel("Epoch")
         plt.legend(["Train", "Cross validation"])
@@ -190,10 +194,6 @@ def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True,
 
 
 def run_single_configuration(configs):
-    # If we don't have a fixed seed, every time that I train the model, it predicts different results.
-    # Probably we should make enough epochs in order to get to a very small loss in order to get deterministic results
-    np.random.seed(7)
-
     # Read data
     df = pd.read_csv('~/code/dscience/stocks/data/facebook.csv', engine='python', skipfooter=3)
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
@@ -209,17 +209,10 @@ def run_single_configuration(configs):
     return res
 
 
-def run_multiple_configurations(configs):
-    # If we don't have a fixed seed, every time that I train the model, it predicts different results.
-    # Probably we should make enough epochs in order to get to a very small loss in order to get deterministic results
-    np.random.seed(7)
-
+def run_multiple_configurations(configs, batch_sizes = [20, 10, 5, 4, 3, 2, 1], look_backs = [20, 10, 7, 5, 4, 3, 2, 1]):
     # Read data
     df = pd.read_csv('~/code/dscience/stocks/data/facebook.csv', engine='python', skipfooter=3)
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
-
-    batch_sizes = [20, 10, 5, 4, 3, 2, 1]
-    look_backs = [20, 10, 7, 5, 4, 3, 2, 1]
 
     # Create a DF to hold the results of RMSE for all combinations
     df_rmse = pd.DataFrame(columns=["{} look_back".format(i) for i in look_backs])
@@ -267,5 +260,7 @@ if __name__ == '__main__':
         }
     }
 
+    # configs["model"]["epochs"] = 90
     # res = run_multiple_configurations(configs)
+
     res = run_single_configuration(configs)
