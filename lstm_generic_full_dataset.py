@@ -10,6 +10,8 @@ from keras.models import Sequential
 from keras.layers import Dense, LSTM, Dropout
 from keras import regularizers, optimizers
 from sklearn.model_selection import train_test_split
+import hyperopt
+from hyperopt import hp
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -51,8 +53,8 @@ def predict_close_lstm(df, configs):
     test_y = fit_to_batch_size(test_y, batch_size)
 
     # Split testing set to testing set and cross validation set (50%-50%)
-    cv_x, test_x  = np.split(test_x, 2)
-    cv_y, test_y = np.split(test_y, 2)
+    cv_x, test_x = np.array_split(test_x, 2)
+    cv_y, test_y = np.array_split(test_y, 2)
 
     # Fit again after splitting
     test_x = fit_to_batch_size(test_x, batch_size)
@@ -239,29 +241,82 @@ def run_multiple_configurations(configs, batch_sizes = [20, 10, 5, 4, 3, 2, 1], 
     return df_rmse
 
 
-if __name__ == '__main__':
-    configs = {
-        "general": {
-            "file": "data/facebook.csv",
-            "plot_results": True,
-            "verbose": 1,
-            "use_all_features": False,
-            "train_size": 0.8
-        },
-        "model": {
-            "batch_size": 4,
-            "look_back": 10,
-            "epochs": 70,
-            "network": {
-                "custom_optimizer": False,
-                "regularization_factor": 0,
-                "dropout_val": 0,
-                "lstm_neurons": [4, 4]
-            }
-        }
+def optimize_parameters():
+    search_space = {
+        'model_batch_size': hp.choice('model_batch_size', [10, 5, 3]),
+        'model_look_back': hp.choice('model_look_back', [10, 7, 4, 2]),
+        'network_lstm_neurons_l1': hp.choice('network_lstm_neurons_l1', [4, 20, 70, 100]),
+        'network_lstm_neurons_l2': hp.choice('network_lstm_neurons_l2', [4, 20, 70, 100]),
+        'network_dropout_val': hp.uniform('network_dropout_val', 0, 1),
+        'network_reg_factor': hp.uniform('network_reg_factor', 0, 0.7)
     }
 
+    def run_hyperopt_single(params):
+        configs = {
+            "general": {
+                "file": "data/facebook.csv",
+                "plot_results": False,
+                "verbose": 2,
+                "use_all_features": False,
+                "train_size": 0.7
+            },
+            "model": {
+                "batch_size": params['model_batch_size'],
+                "look_back": params['model_look_back'],
+                "epochs": 70,
+                "network": {
+                    "custom_optimizer": False,
+                    "regularization_factor": params['network_reg_factor'],
+                    "dropout_val": params['network_dropout_val'],
+                    "lstm_neurons": [params['network_lstm_neurons_l1'], params['network_lstm_neurons_l2']]
+                }
+            }
+        }
+        logger.info("Running current config: %s", configs)
+
+        res_single_run = run_single_configuration(configs)
+        cv_loss = np.amin(res_single_run['cv_loss'])
+
+        logger.info("Loss for config %s: %s", params, cv_loss)
+
+        return {
+            'status': hyperopt.STATUS_OK,
+            'loss': cv_loss,
+            'configs': configs,
+            'run_result': res_single_run
+        }
+
+    trials = hyperopt.Trials()
+    res_hyperopt = hyperopt.fmin(run_hyperopt_single, space=search_space, algo=hyperopt.tpe.suggest, trials=trials, max_evals=1000)
+    logger.info("Best result:\nConfigs: %s\nTest RMSE: %s", trials.best_trial['result']['configs'],
+                trials.best_trial['result']['run_result']['test_rmse'])
+
+
+if __name__ == '__main__':
+    # configs = {
+    #     "general": {
+    #         "file": "data/facebook.csv",
+    #         "plot_results": True,
+    #         "verbose": 1,
+    #         "use_all_features": False,
+    #         "train_size": 0.8
+    #     },
+    #     "model": {
+    #         "batch_size": 4,
+    #         "look_back": 10,
+    #         "epochs": 70,
+    #         "network": {
+    #             "custom_optimizer": False,
+    #             "regularization_factor": 0,
+    #             "dropout_val": 0,
+    #             "lstm_neurons": [4, 4]
+    #         }
+    #     }
+    # }
     # configs["model"]["epochs"] = 90
     # res = run_multiple_configurations(configs)
 
-    res = run_single_configuration(configs)
+    # res = run_single_configuration(configs)
+
+    optimize_parameters()
+
