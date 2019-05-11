@@ -1,5 +1,6 @@
 import os
 import math
+import datetime
 import random
 import pandas as pd
 import numpy as np
@@ -59,7 +60,8 @@ def predict_close_linear_regression(df, cur_day, num_of_days, window_size=7):
     return actuals, predictions, df_results
 
 
-def simulate_buy(df, stock_units, sim_type):
+def simulate_buy(df, stock_units, sim_type, buy_decision_threshold=0):
+    random.seed(datetime.datetime.now())
     bought = False
     buy_price = 0
 
@@ -67,6 +69,7 @@ def simulate_buy(df, stock_units, sim_type):
         "transactions_count": 0,
         "total_bought": 0,
         "total_revenue": 0,
+        "yield": 0,
         "period_days": len(df)
     }
 
@@ -84,7 +87,7 @@ def simulate_buy(df, stock_units, sim_type):
 
         # Buy next day
         if sim_type == "prediction":
-            should_buy = today_close < tomorrow_close_prediction
+            should_buy = tomorrow_close_prediction - today_close > buy_decision_threshold
         else:
             should_buy = random.randint(1, 2) == 1
 
@@ -94,6 +97,8 @@ def simulate_buy(df, stock_units, sim_type):
             buy_price = today_close * stock_units
             stats["total_bought"] += buy_price
             stats["transactions_count"] += 1
+
+    stats["yield"] = stats["total_revenue"] / stats["total_bought"] * 100
 
     return stats
 
@@ -121,9 +126,21 @@ numebr_of_days = len(df_test) - ws
 res_actuals, res_predicted, df_results = predict_close_linear_regression(df_test, first_day, numebr_of_days, window_size=ws)
 df_results.head()
 
+# Simulate buying with linear regression predictions
 stats_prediction = simulate_buy(df_results, 5, sim_type="prediction")
 print(stats_prediction)
 
+# Simulate buying with actual tomorrow's value "predictions"
+df_actual_predictions = df_results.copy()
+for index, row in df_actual_predictions.iterrows():
+    try:
+        df_actual_predictions.loc[index, 'Prediction'] = df_actual_predictions.loc[index + 1]['Close']
+    except:
+        pass
+stats_actual_prediction = simulate_buy(df_actual_predictions, 5, sim_type="prediction")
+print(stats_actual_prediction)
+
+# Simulate buying with random decision
 total_revenues = []
 for i in range(100):
     stats_randomly = simulate_buy(df_results, 5, sim_type="random")

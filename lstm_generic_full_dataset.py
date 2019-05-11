@@ -51,8 +51,8 @@ def predict_close_lstm(df, configs):
     test_y = fit_to_batch_size(test_y, batch_size)
 
     # Split testing set to testing set and cross validation set (50%-50%)
-    test_x, cv_x = np.split(test_x, 2)
-    test_y, cv_y = np.split(test_y, 2)
+    cv_x, test_x  = np.split(test_x, 2)
+    cv_y, test_y = np.split(test_y, 2)
 
     # Fit again after splitting
     test_x = fit_to_batch_size(test_x, batch_size)
@@ -195,7 +195,7 @@ def plot_prediction_results(data, plot_predicted_vs_actual=True, plot_loss=True,
 
 def run_single_configuration(configs):
     # Read data
-    df = pd.read_csv('~/code/dscience/stocks/data/facebook.csv', engine='python', skipfooter=3)
+    df = pd.read_csv(configs['general']['file'], engine='python', skipfooter=3)
     df.loc[:, 'Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
 
     # Run prediction
@@ -242,15 +242,16 @@ def run_multiple_configurations(configs, batch_sizes = [20, 10, 5, 4, 3, 2, 1], 
 if __name__ == '__main__':
     configs = {
         "general": {
-            "plot_results": False,
-            "verbose": 0,
+            "file": "data/facebook.csv",
+            "plot_results": True,
+            "verbose": 1,
             "use_all_features": False,
             "train_size": 0.8
         },
         "model": {
             "batch_size": 4,
             "look_back": 10,
-            "epochs": 60,
+            "epochs": 70,
             "network": {
                 "custom_optimizer": False,
                 "regularization_factor": 0,
