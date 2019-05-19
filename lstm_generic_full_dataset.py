@@ -1,4 +1,6 @@
 import logging
+import pickle
+import os
 import math
 import numpy as np
 import matplotlib.pyplot as plt
@@ -286,10 +288,37 @@ def optimize_parameters():
             'run_result': res_single_run
         }
 
-    trials = hyperopt.Trials()
-    res_hyperopt = hyperopt.fmin(run_hyperopt_single, space=search_space, algo=hyperopt.tpe.suggest, trials=trials, max_evals=1000)
-    logger.info("Best result:\nConfigs: %s\nTest RMSE: %s", trials.best_trial['result']['configs'],
-                trials.best_trial['result']['run_result']['test_rmse'])
+    def run_trials():
+        output_dir_name = 'output'
+        dump_filename = 'stocks_lstm_model.hyperopt'
+        os.makedirs(output_dir_name, exist_ok=True)
+
+        ##################################################################
+        # Trials rerunning with pickle
+        # Code taken from: https://github.com/hyperopt/hyperopt/issues/267
+        ##################################################################
+        trials_step = 1  # how many additional trials to do after loading saved trials. 1 = save after iteration
+        max_trials = 2  # initial max_trials. put something small to not have to wait
+
+        try:  # try to load an already saved trials object, and increase the max
+            trials = pickle.load(open(os.path.join(output_dir_name, dump_filename), "rb"))
+            logger.info("Found saved Trials! Loading...")
+            max_trials = len(trials.trials) + trials_step
+            logger.info("Rerunning from {} trials to {} (+{}) trials".format(len(trials.trials), max_trials, trials_step))
+        except:  # create a new trials object and start searching
+            trials = hyperopt.Trials()
+
+        res_hyperopt = hyperopt.fmin(run_hyperopt_single, space=search_space, algo=hyperopt.tpe.suggest, trials=trials, max_evals=max_trials)
+        logger.info("Best result:\nConfigs: %s\nTest RMSE: %s", trials.best_trial['result']['configs'],
+                    trials.best_trial['result']['run_result']['test_rmse'])
+
+        # save the trials object
+        with open(os.path.join(output_dir_name, dump_filename), "wb") as f:
+            pickle.dump(trials, f)
+
+    # loop indefinitely and stop whenever you like
+    while True:
+        run_trials()
 
 
 if __name__ == '__main__':
