@@ -29,8 +29,14 @@ def predict_close_lstm(df, configs):
     batch_size = configs["model"]["batch_size"]
 
     # Split to 2 dataframes: train and test
-    df_train, df_test = train_test_split(df, train_size=configs["general"]["train_size"], test_size=(1 - configs["general"]["train_size"]),
-                                         shuffle=False)
+    if configs["general"].get("test_size"):
+        train_size = math.floor(len(df) * configs["general"]["train_size"])
+        test_size = math.floor(len(df)*configs["general"]["test_size"])
+        df_train = df.loc[:train_size,:]
+        df_test = df.loc[len(df)-test_size:, :]
+    else:
+        test_size = 1 - configs["general"]["train_size"]
+        df_train, df_test = train_test_split(df, train_size=configs["general"]["train_size"], test_size=test_size, shuffle=False)
 
     # Take only the training columns
     feature_columns = ["Close"]
@@ -321,31 +327,80 @@ def optimize_parameters():
         run_trials()
 
 
+def learning_curve():
+    configs = {
+        "general": {
+            "file": "data/facebook.csv",
+            "plot_results": False,
+            "verbose": 0,
+            "use_all_features": False,
+            "train_size": None,
+            "test_size": 0.2
+        },
+        "model": {
+            "batch_size": 4,
+            "look_back": 10,
+            "epochs": 5,
+            "network": {
+                "custom_optimizer": False,
+                "regularization_factor": 0,
+                "dropout_val": 0,
+                "lstm_neurons": [4, 4]
+            }
+        }
+    }
+
+    train_sizes = list(np.arange(0.1, 0.8, 0.05))
+    # train_sizes = [0.1, 0.2, 0.3]
+    cv_loss_results = []
+    train_loss_results = []
+    for train_size in train_sizes:
+        logger.info("Running train size {}%".format(train_size))
+
+        configs["general"]["train_size"] = train_size
+        res = run_single_configuration(configs)
+
+        cv_loss_results.append(res["cv_loss"][-1])
+        train_loss_results.append(res["model_loss"][-1])
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(train_sizes, cv_loss_results)
+    plt.plot(train_sizes, train_loss_results)
+    plt.title("Learning curves")
+    plt.ylabel("Loss")
+    plt.xlabel("Training size (%)")
+    plt.legend(["Cross validation", "Train"])
+    plt.show()
+
+
 if __name__ == '__main__':
-    # configs = {
-    #     "general": {
-    #         "file": "data/facebook.csv",
-    #         "plot_results": True,
-    #         "verbose": 1,
-    #         "use_all_features": False,
-    #         "train_size": 0.8
-    #     },
-    #     "model": {
-    #         "batch_size": 4,
-    #         "look_back": 10,
-    #         "epochs": 70,
-    #         "network": {
-    #             "custom_optimizer": False,
-    #             "regularization_factor": 0,
-    #             "dropout_val": 0,
-    #             "lstm_neurons": [4, 4]
-    #         }
-    #     }
-    # }
+    configs = {
+        "general": {
+            "file": "data/facebook.csv",
+            "plot_results": True,
+            "verbose": 2,
+            "use_all_features": False,
+            "train_size": 0.8,
+            "test_size": None
+        },
+        "model": {
+            "batch_size": 4,
+            "look_back": 10,
+            "epochs": 70,
+            "network": {
+                "custom_optimizer": False,
+                "regularization_factor": 0,
+                "dropout_val": 0,
+                "lstm_neurons": [4, 4]
+            }
+        }
+    }
+
     # configs["model"]["epochs"] = 90
     # res = run_multiple_configurations(configs)
 
-    # res = run_single_configuration(configs)
+    res = run_single_configuration(configs)
 
-    optimize_parameters()
+    # optimize_parameters()
 
+    # learning_curve()
